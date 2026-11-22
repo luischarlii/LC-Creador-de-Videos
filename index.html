@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Creador de video publicitario</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rye&family=Sancreek&family=Smokum&family=Ewert&family=Holtwood+One+SC&family=Special+Elite&family=Alfa+Slab+One&display=swap">
+<style>
+:root{--bg:#f6f4ef;--fg:#1c1b19;--card:#fff;--mut:#6b675f;--ac:#e8590c;--bd:#e2ded4;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171613;--fg:#f1efe9;--card:#23211d;--mut:#a09b90;--bd:#38352f;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#171613;--fg:#f1efe9;--card:#23211d;--mut:#a09b90;--bd:#38352f;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:480px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:14px}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+input[type=text],textarea,select{width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--fg);font:inherit}
+textarea{min-height:84px;resize:vertical}
+.row{display:flex;gap:10px}.row>div{flex:1}
+input[type=color]{width:100%;height:42px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);padding:2px}
+button{width:100%;padding:13px;border:0;border-radius:12px;font:600 16px inherit;background:var(--ac);color:#fff;margin-top:10px}
+button.sec{background:var(--bg);color:var(--fg);border:1px solid var(--bd)}
+button:disabled{opacity:.5}
+canvas,video{display:block;width:100%;max-width:300px;margin:0 auto;border-radius:12px;background:#000;aspect-ratio:9/16}
+#msg{text-align:center;color:var(--mut);font-size:14px;min-height:20px;margin-top:8px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<h1>Creador de video publicitario</h1>
+<div class="card">
+<canvas id="cv"></canvas>
+<button id="play" class="sec">▶ Vista previa</button>
+<button id="rec">⏺ Grabar video</button>
+<div id="msg"></div>
+</div>
+<div class="card" id="res" hidden>
+<video id="vid" controls playsinline></video>
+<button id="share">Compartir / guardar</button>
+</div>
+<form class="card" id="f" onsubmit="return false">
+<label>Nombre del negocio o producto</label>
+<input type="text" id="name" value="Tu Negocio">
+<label>Eslogan</label>
+<input type="text" id="slogan" value="Calidad que se nota">
+<label>Frases (una por línea, máximo 4)</label>
+<textarea id="lines">Los mejores precios
+Atención rápida y de confianza
+Pregunta por nuestras promociones</textarea>
+<label>Oferta o precio (opcional)</label>
+<input type="text" id="offer" value="2x1 esta semana">
+<label>Contacto (WhatsApp, dirección…)</label>
+<input type="text" id="contact" value="WhatsApp 55 0000 0000">
+<div class="row">
+<div><label>Color 1</label><input type="color" id="c1" value="#e8590c"></div>
+<div><label>Color 2</label><input type="color" id="c2" value="#7a1d6b"></div>
+</div>
+<label>Colores del texto</label>
+<div class="row">
+<div><label>Título</label><input type="color" id="ct" value="#ffffff"></div>
+<div><label>Eslogan</label><input type="color" id="cf" value="#ffffff"></div>
+<div><label>Oferta</label><input type="color" id="co" value="#ffe066"></div>
+<div><label>Contacto</label><input type="color" id="cc" value="#ffffff"></div>
+</div>
+<label>Color de cada frase</label>
+<div class="row">
+<div><label>Frase 1</label><input type="color" id="cl1" value="#ffffff"></div>
+<div><label>Frase 2</label><input type="color" id="cl2" value="#ffffff"></div>
+<div><label>Frase 3</label><input type="color" id="cl3" value="#ffffff"></div>
+<div><label>Frase 4</label><input type="color" id="cl4" value="#ffffff"></div>
+</div>
+<label>Letra del título y la oferta</label>
+<select id="f1"></select>
+<label>Letra de las frases y el contacto</label>
+<select id="f2"></select>
+<label>Posición de las fotos</label>
+<select id="pos"><option value="fondo">Al fondo (el texto va encima)</option><option value="frente">Al frente (la foto va encima del texto)</option></select>
+<label>Cuánto tapa la foto al texto (solo al frente)</label>
+<input type="range" id="ov" min="0" max="1" step="0.05" value="0.35" style="width:100%">
+<label>Fotos (opcional, hasta 6)</label>
+<input type="file" id="fotos" accept="image/*" multiple>
+<div id="nf" style="font-size:13px;color:var(--mut);margin-top:4px"></div>
+<label>Voz (opcional)</label>
+<button type="button" id="mic" class="sec">🎙 Grabar mi voz</button>
+<label>o sube un audio de voz</label>
+<input type="file" id="vozf" accept="audio/*">
+<div id="nv" style="font-size:13px;color:var(--mut);margin-top:4px"></div>
+<label>Efecto de voz</label>
+<select id="efecto"><option value="normal">Normal</option><option value="ardilla">Ardilla (aguda)</option><option value="gigante">Gigante (grave)</option><option value="robot">Robot</option><option value="eco">Eco de cueva</option><option value="telefono">Teléfono viejo</option></select>
+<button type="button" id="probar" class="sec">🔊 Probar efecto</button>
+<label>Música o audio (opcional, desde Archivos)</label>
+<input type="file" id="musica" accept="audio/*">
+<div id="nm" style="font-size:13px;color:var(--mut);margin-top:4px"></div>
+</form>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const cv=$('cv'),ctx=cv.getContext('2d'),W=720,H=1280;
+cv.width=W;cv.height=H;
+let imgs=[],raf=null,blob=null,musica=null,voz=null,mrec=null,voiceSrc=null,front=false,curK='';
+const ease=x=>1-Math.pow(1-x,3);
+const clamp=x=>Math.max(0,Math.min(1,x));
+function data(){
+  return{name:$('name').value.trim(),slogan:$('slogan').value.trim(),
+    lines:$('lines').value.split('\n').map(s=>s.trim()).filter(Boolean).slice(0,4),
+    offer:$('offer').value.trim(),contact:$('contact').value.trim(),c1:$('c1').value,c2:$('c2').value,
+    ct:$('ct').value,cf:$('cf').value,co:$('co').value,cc:$('cc').value,f1:$('f1').value,f2:$('f2').value,
+    cl:[1,2,3,4].map(n=>$('cl'+n).value)};
+}
+function scenes(){
+  const d=data(),s=[{k:'intro',t:2.6}];
+  d.lines.forEach((l,i)=>s.push({k:'line',t:2.6,text:l,i}));
+  if(d.offer)s.push({k:'offer',t:2.8});
+  s.push({k:'cta',t:3.2});
+  return s;
+}
+const total=()=>scenes().reduce((a,s)=>a+s.t,0);
+function wrap(s,mw){
+  const out=[];let c='';
+  for(const w of s.split(' ')){
+    const t=c?c+' '+w:w;
+    if(ctx.measureText(t).width>mw&&c){out.push(c);c=w}else c=t;
+  }
+  if(c)out.push(c);return out;
+}
+function txt(str,y,size,color,a,weight,fam){
+  ctx.save();
+  ctx.globalAlpha=clamp(a);ctx.fillStyle=color;
+  ctx.font=(weight||'800')+' '+size+'px '+(fam&&fam!=='system-ui'?'"'+fam+'", ':'')+'system-ui,-apple-system,sans-serif';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  const ls=wrap(str,W-120),lh=size*1.2,y0=y-(ls.length-1)*lh/2;
+  ctx.shadowColor='rgba(0,0,0,.4)';ctx.shadowBlur=12;
+  ls.forEach((l,k)=>ctx.fillText(l,W/2,y0+k*lh+(1-clamp(a))*40-(front&&curK!=='offer'?H*.15:0)));
+  ctx.restore();
+}
+function bg(i,p,d,noImg){
+  const im=!noImg&&!front&&imgs.length?imgs[i%imgs.length]:null;
+  if(im){
+    const r=Math.max(W/im.width,H/im.height)*(1+.1*p),w=im.width*r,h=im.height*r;
+    ctx.drawImage(im,(W-w)/2,(H-h)/2,w,h);
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'rgba(0,0,0,.35)');g.addColorStop(1,'rgba(0,0,0,.75)');
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  }else{
+    const g=ctx.createLinearGradient(0,0,W,H);
+    g.addColorStop(0,d.c1);g.addColorStop(1,d.c2);
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='rgba(255,255,255,.1)';
+    for(let k=0;k<3;k++){
+      ctx.beginPath();
+      ctx.arc(W*(.2+.3*k)+Math.sin(p*3+k)*40,H*(.25+.25*k)+p*60,140+k*40,0,7);
+      ctx.fill();
+    }
+  }
+}
+function drawAt(t){front=$('pos').value==='frente'&&imgs.length>0;drawCore(t)}
+function drawCore(t){
+  const d=data(),sc=scenes();
+  let acc=0,s=sc[sc.length-1],lt=s.t;
+  for(const x of sc){if(t<acc+x.t){s=x;lt=t-acc;break}acc+=x.t}
+  curK=s.k;const p=clamp(lt/s.t),a=ease(clamp(lt/.6))*clamp((s.t-lt)/.4+ (s.k==='cta'?1:0));
+  if(s.k==='intro'){
+    bg(0,p,d);
+    txt(d.name||' ',H*.42,96,d.ct,a,'800',d.f1);
+    txt(d.slogan,H*.58,44,d.cf,ease(clamp((lt-.5)/.6))*clamp((s.t-lt)/.4),'600',d.f2);card(0,p,lt);
+  }else if(s.k==='line'){
+    bg(s.i+1,p,d);
+    ctx.fillStyle=d.co;ctx.fillRect(W/2-60,H*.5-190,120,8);
+    txt(s.text,H*.5,64,d.cl[s.i],a,'800',d.f2);card(s.i+1,p,lt);
+  }else if(s.k==='offer'){
+    bg(0,p,d,true);
+    txt('¡OFERTA!',H*.34,60,d.co,a,'700',d.f1);
+    txt(d.offer,H*.5,110,d.co,a,'800',d.f1);
+  }else{
+    bg(1,p,d,true);
+    txt(d.name||' ',H*.4,84,d.ct,a,'800',d.f1);
+    txt(d.contact,H*.56,50,d.cc,ease(clamp((lt-.4)/.6)),'600',d.f2);card(1,p,lt);
+  }
+}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath()}
+function card(i,p,lt){
+  if(!front||!imgs.length)return;
+  const im=imgs[i%imgs.length],ov=+$('ov').value;
+  const top=H*(.46-ov*.12),w=W*.8,h=H*.93-top;
+  const dy=(1-ease(clamp(lt/.8)))*H*.35;
+  ctx.save();
+  ctx.translate(W/2,top+h/2+dy);ctx.rotate(-.03);
+  ctx.shadowColor='rgba(0,0,0,.5)';ctx.shadowBlur=30;
+  ctx.fillStyle='#fff';rr(-w/2-8,-h/2-8,w+16,h+16,26);ctx.fill();
+  ctx.shadowBlur=0;
+  rr(-w/2,-h/2,w,h,20);ctx.clip();
+  const r=Math.max(w/im.width,h/im.height)*(1+.08*p);
+  ctx.drawImage(im,-im.width*r/2,-im.height*r/2,im.width*r,im.height*r);
+  ctx.restore();
+}
+function armaVoz(ac,buf,dest,ef){
+  const s=ac.createBufferSource();s.buffer=buf;
+  const g=ac.createGain();g.gain.value=1.4;
+  let n=s;
+  if(ef==='ardilla')s.playbackRate.value=1.6;
+  else if(ef==='gigante')s.playbackRate.value=.72;
+  else if(ef==='robot'){
+    const m=ac.createGain();m.gain.value=0;
+    const o=ac.createOscillator();o.type='square';o.frequency.value=55;
+    o.connect(m.gain);o.start();
+    s.connect(m);n=m;
+  }else if(ef==='eco'){
+    const d=ac.createDelay(1);d.delayTime.value=.28;
+    const fb=ac.createGain();fb.gain.value=.45;
+    d.connect(fb);fb.connect(d);
+    const mix=ac.createGain();
+    s.connect(mix);s.connect(d);d.connect(mix);n=mix;
+  }else if(ef==='telefono'){
+    const b=ac.createBiquadFilter();b.type='bandpass';b.frequency.value=1500;b.Q.value=.8;
+    s.connect(b);n=b;
+  }
+  n.connect(g);
+  g.connect(dest);
+  return s;
+}
+function run(r){
+  cancelAnimationFrame(raf);
+  const T=total(),t0=performance.now();
+  const f=now=>{
+    const t=(now-t0)/1000;
+    drawAt(Math.min(t,T-.001));
+    if(t<T)raf=requestAnimationFrame(f);
+    else{if(r&&r.state!=='inactive')r.stop();busy(false)}
+  };
+  raf=requestAnimationFrame(f);
+}
+function busy(b){$('play').disabled=b;$('rec').disabled=b}
+function msg(s){$('msg').textContent=s}
+$('play').onclick=()=>{busy(true);msg('');run(null)};
+$('rec').onclick=async()=>{
+  const AC=window.AudioContext||window.webkitAudioContext;
+  voiceSrc=null;
+  const ac=(musica||voz)&&AC?new AC():null;
+  if(ac)ac.resume();
+  await fuentesCargadas();
+  const types=['video/mp4','video/mp4;codecs=avc1','video/webm;codecs=vp9','video/webm'];
+  const mt=window.MediaRecorder&&types.find(m=>MediaRecorder.isTypeSupported(m));
+  if(!mt||!cv.captureStream){msg('Este navegador no puede grabar video.');return}
+  const st=cv.captureStream(30);let src=null;
+  if(ac){
+    try{
+      const buf=musica?await ac.decodeAudioData(await musica.arrayBuffer()):null;
+      const dest=ac.createMediaStreamDestination(),gain=ac.createGain(),T=total();
+      if(buf){src=ac.createBufferSource();src.buffer=buf;src.loop=true;}
+      gain.gain.setValueAtTime(voz?.35:.8,ac.currentTime+Math.max(0,T-1.2));
+      gain.gain.linearRampToValueAtTime(0,ac.currentTime+T);
+      if(src)src.connect(gain);gain.connect(dest);
+      if(voz){const vb=await ac.decodeAudioData(await voz.arrayBuffer());voiceSrc=armaVoz(ac,vb,dest,$('efecto').value)}
+      dest.stream.getAudioTracks().forEach(t=>st.addTrack(t));
+    }catch(e){msg('No pude leer el audio; grabo sin música.');src=null}
+  }
+  const chunks=[],r=new MediaRecorder(st,{mimeType:mt,videoBitsPerSecond:4e6});
+  r.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  r.onstop=()=>{
+    if(src){try{src.stop()}catch(_){}}
+    if(voiceSrc){try{voiceSrc.stop()}catch(_){}}
+    if(ac)ac.close();
+    blob=new Blob(chunks,{type:mt.split(';')[0]});
+    $('vid').src=URL.createObjectURL(blob);
+    $('res').hidden=false;
+    $('res').scrollIntoView({behavior:'smooth'});
+    msg('Video listo');
+  };
+  busy(true);msg('Grabando…');r.start();if(src)src.start();if(voiceSrc)voiceSrc.start();run(r);
+};
+$('share').onclick=async()=>{
+  if(!blob)return;
+  const ext=blob.type.includes('mp4')?'mp4':'webm';
+  const file=new File([blob],'anuncio.'+ext,{type:blob.type});
+  try{
+    if(navigator.canShare&&navigator.canShare({files:[file]}))await navigator.share({files:[file]});
+    else msg('Tu navegador no permite compartir; mantén presionado el video.');
+  }catch(e){msg('No se pudo compartir; mantén presionado el video.')}
+};
+$('fotos').addEventListener('change',async e=>{
+  imgs=[];
+  for(const f of [...e.target.files].slice(0,6)){
+    const im=new Image();im.src=URL.createObjectURL(f);
+    try{await im.decode();imgs.push(im)}catch(_){}
+  }
+  $('nf').textContent=imgs.length+' foto(s) cargada(s)';
+  drawAt(3.5);
+});
+$('musica').addEventListener('change',e=>{
+  musica=e.target.files[0]||null;
+  $('nm').textContent=musica?musica.name:'';
+});
+const FUENTES=[['system-ui','Normal (sistema)'],['Impact','Impact'],['Arial Black','Arial Black'],['Futura','Futura'],['Avenir Next','Avenir Next'],['Trebuchet MS','Trebuchet'],['Georgia','Georgia'],['Palatino','Palatino'],['Copperplate','Copperplate'],['Marker Felt','Marker Felt'],['Chalkduster','Chalkduster'],['Snell Roundhand','Snell Roundhand'],['Courier New','Courier New'],['Papyrus','Papyrus'],['Rye','Rye (viejo oeste)'],['Sancreek','Sancreek (viejo oeste)'],['Smokum','Smokum (vaquero)'],['Ewert','Ewert (cartel del oeste)'],['Holtwood One SC','Holtwood (madera)'],['Special Elite','Special Elite (máquina de escribir)'],['Alfa Slab One','Alfa Slab (cartel)']];
+['f1','f2'].forEach(id=>{
+  $(id).innerHTML=FUENTES.map(x=>'<option value="'+x[0]+'">'+x[1]+'</option>').join('');
+});
+const fuentesCargadas=()=>Promise.all([$('f1').value,$('f2').value].map(f=>f==='system-ui'?0:document.fonts.load('40px "'+f+'"').catch(()=>0)));
+$('f').addEventListener('input',()=>{drawAt(1.6);fuentesCargadas().then(()=>drawAt(1.6))});
+$('mic').onclick=async()=>{
+  if(mrec&&mrec.state==='recording'){mrec.stop();return}
+  try{
+    const st=await navigator.mediaDevices.getUserMedia({audio:true});
+    const mt=['audio/mp4','audio/webm'].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m))||'';
+    const ch=[];
+    mrec=new MediaRecorder(st,mt?{mimeType:mt}:{});
+    mrec.ondataavailable=e=>{if(e.data.size)ch.push(e.data)};
+    mrec.onstop=()=>{
+      st.getTracks().forEach(t=>t.stop());
+      voz=new Blob(ch,{type:mrec.mimeType||mt});
+      $('nv').textContent='Voz grabada ('+Math.round(voz.size/1024)+' KB)';
+      $('mic').textContent='🎙 Grabar de nuevo';
+    };
+    mrec.start();$('mic').textContent='⏹ Detener grabación';
+  }catch(e){msg('No pude usar el micrófono aquí. Sube un audio de voz con el botón de abajo.')}
+};
+$('vozf').addEventListener('change',e=>{
+  voz=e.target.files[0]||null;
+  $('nv').textContent=voz?voz.name:'';
+});
+$('probar').onclick=async()=>{
+  if(!voz){msg('Primero graba o sube una voz.');return}
+  const AC2=window.AudioContext||window.webkitAudioContext,ac2=new AC2();
+  ac2.resume();
+  try{
+    const b=await ac2.decodeAudioData(await voz.arrayBuffer());
+    armaVoz(ac2,b,ac2.destination,$('efecto').value).start();
+  }catch(e){msg('No pude reproducir esa voz.')}
+};
+fuentesCargadas().then(()=>drawAt(1.6));
+drawAt(1.6);
+</script>
+</body>
+</html>
