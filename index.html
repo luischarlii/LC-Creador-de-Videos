@@ -105,6 +105,16 @@ Pregunta por nuestras promociones</textarea>
 <label>Música o audio (opcional, desde Archivos)</label>
 <input type="file" id="musica">
 <div id="nm" style="font-size:13px;color:var(--mut);margin-top:4px"></div>
+<div id="recm" hidden>
+<label>Elige el tramo de la canción (la parte naranja es la que se usa)</label>
+<canvas id="wf" width="600" height="90" style="max-width:100%;width:100%;height:70px;aspect-ratio:auto;margin:0;border-radius:8px;background:var(--bg);border:1px solid var(--bd)"></canvas>
+<label>Inicio: <b id="tiv">0:00</b></label>
+<input type="range" id="ti" min="0" max="100" step="0.1" value="0" style="width:100%">
+<label>Fin: <b id="tfv">0:00</b></label>
+<input type="range" id="tf" min="0" max="100" step="0.1" value="100" style="width:100%">
+<div id="tdur" style="font-size:13px;color:var(--mut)"></div>
+<button type="button" id="tpl" class="sec">▶ Escuchar tramo</button>
+</div>
 </form>
 </main>
 <div id="ed" hidden>
@@ -282,7 +292,7 @@ async function montaAudio(ac,dest){
   }
   if(musica){
     const buf=await ac.decodeAudioData(await musica.arrayBuffer());
-    src=ac.createBufferSource();src.buffer=buf;src.loop=true;src.connect(gain);
+    src=ac.createBufferSource();src.buffer=buf;src.loop=true;if(musBuf){src.loopStart=tIni;src.loopEnd=Math.max(tFin,tIni+.5)}src.connect(gain);
   }
   if(voz){
     const vb=await ac.decodeAudioData(await voz.arrayBuffer());
@@ -293,7 +303,7 @@ async function montaAudio(ac,dest){
       const t=ac.currentTime;
       gain.gain.setValueAtTime(nivel,t+Math.max(0,T-1.2));
       gain.gain.linearRampToValueAtTime(0,t+T);
-      if(src)src.start(t);
+      if(src)src.start(t,musBuf?tIni:0);
       if(vs)vs.start(t);
     },
     stop(){[src,vs].forEach(s=>{if(s){try{s.stop()}catch(_){}}})}
@@ -368,7 +378,7 @@ $('fotos').addEventListener('change',async e=>{
 });
 $('musica').addEventListener('change',e=>{
   musica=e.target.files[0]||null;
-  $('nm').textContent=musica?musica.name:'';
+  $('nm').textContent=musica?musica.name:'';cargaTramo();
 });
 const FUENTES=[['system-ui','Normal (sistema)'],['Impact','Impact'],['Arial Black','Arial Black'],['Futura','Futura'],['Avenir Next','Avenir Next'],['Trebuchet MS','Trebuchet'],['Georgia','Georgia'],['Palatino','Palatino'],['Copperplate','Copperplate'],['Marker Felt','Marker Felt'],['Chalkduster','Chalkduster'],['Snell Roundhand','Snell Roundhand'],['Courier New','Courier New'],['Papyrus','Papyrus'],['Rye','Rye (viejo oeste)'],['Sancreek','Sancreek (viejo oeste)'],['Smokum','Smokum (vaquero)'],['Ewert','Ewert (cartel del oeste)'],['Holtwood One SC','Holtwood (madera)'],['Special Elite','Special Elite (máquina de escribir)'],['Alfa Slab One','Alfa Slab (cartel)']];
 ['f1','f2'].forEach(id=>{
@@ -619,6 +629,65 @@ $('pngcut').addEventListener('change',async e=>{
     drawAt(1.6);msg('Recorte cargado para la foto '+(k+1)+'.');
   }catch(_){msg('No pude abrir ese PNG.')}
 });
+let musBuf=null,tIni=0,tFin=0,peaks=null,tpAc=null,tpSrc=null;
+const mmss=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
+async function cargaTramo(){
+  musBuf=null;peaks=null;$('recm').hidden=true;
+  if(!musica)return;
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC)return;
+  const ac=new AC();
+  try{musBuf=await ac.decodeAudioData(await musica.arrayBuffer())}
+  catch(e){$('nm').textContent=musica.name+' ⚠ no pude leer este audio (usa mp3, m4a o wav)';ac.close();return}
+  ac.close();
+  const D=musBuf.duration,W2=$('wf').width,d=musBuf.getChannelData(0),paso=Math.floor(d.length/W2)||1;
+  peaks=new Float32Array(W2);
+  for(let i=0;i<W2;i++){
+    let m=0;
+    for(let j=0;j<paso;j+=Math.max(1,paso>>5)){const v=Math.abs(d[i*paso+j]||0);if(v>m)m=v}
+    peaks[i]=m;
+  }
+  $('ti').max=D;$('tf').max=D;$('ti').value=0;$('tf').value=D;
+  $('recm').hidden=false;
+  ajusta('ti');
+}
+function dibujaOnda(){
+  const c=$('wf'),x=c.getContext('2d'),w=c.width,h=c.height;
+  x.clearRect(0,0,w,h);
+  if(!peaks||!musBuf)return;
+  const D=musBuf.duration;
+  x.fillStyle='#888';
+  for(let i=0;i<w;i++)x.fillRect(i,h/2-peaks[i]*h/2,1,Math.max(1,peaks[i]*h));
+  const a=tIni/D*w,b=tFin/D*w;
+  x.fillStyle='rgba(232,89,12,.3)';x.fillRect(a,0,b-a,h);
+  x.fillStyle='#e8590c';x.fillRect(a,0,2,h);x.fillRect(b-2,0,2,h);
+}
+function ajusta(cual){
+  if(!musBuf)return;
+  const D=musBuf.duration;
+  let a=+$('ti').value,b=+$('tf').value;
+  if(b-a<1){if(cual==='ti')a=Math.max(0,b-1);else b=Math.min(D,a+1)}
+  $('ti').value=a;$('tf').value=b;tIni=a;tFin=b;
+  $('tiv').textContent=mmss(a);$('tfv').textContent=mmss(b);
+  $('tdur').textContent='Tramo de '+(b-a).toFixed(1)+' s. El video dura '+total().toFixed(1)+' s'+(b-a<total()?' y el tramo se repetirá.':'.');
+  dibujaOnda();
+}
+$('ti').oninput=()=>ajusta('ti');
+$('tf').oninput=()=>ajusta('tf');
+$('tpl').onclick=async()=>{
+  const reset=()=>{tpSrc=null;if(tpAc)tpAc.close();tpAc=null;$('tpl').textContent='▶ Escuchar tramo'};
+  if(tpSrc){try{tpSrc.stop()}catch(_){}reset();return}
+  const AC=window.AudioContext||window.webkitAudioContext;
+  tpAc=new AC();tpAc.resume();
+  try{
+    const buf=await tpAc.decodeAudioData(await musica.arrayBuffer());
+    const mine=tpAc.createBufferSource();
+    tpSrc=mine;mine.buffer=buf;mine.connect(tpAc.destination);
+    mine.onended=()=>{if(tpSrc===mine)reset()};
+    mine.start(0,tIni,Math.max(1,tFin-tIni));
+    $('tpl').textContent='⏹ Detener';
+  }catch(e){reset();msg('No pude reproducir ese audio.')}
+};
 $('undo').onclick=()=>{
   const h=E.hist.pop();
   if(h){E.work.getContext('2d').putImageData(h,0,0);pintaEd()}
