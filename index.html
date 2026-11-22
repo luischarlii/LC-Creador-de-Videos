@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="es">
 <head>
@@ -93,6 +92,8 @@ Pregunta por nuestras promociones</textarea>
 <div id="nf" style="font-size:13px;color:var(--mut);margin-top:4px"></div>
 <label>Quitar el fondo de una foto (para que el texto quede detrás)</label>
 <div class="row"><div style="flex:2"><select id="fsel"></select></div><div><button type="button" id="fcut" class="sec" style="margin-top:0">✂ Quitar fondo</button></div></div>
+<label>¿Ya tienes la foto sin fondo (PNG)? Súbela para la foto elegida</label>
+<input type="file" id="pngcut" accept="image/png">
 <label>Voz (opcional)</label>
 <button type="button" id="mic" class="sec">🎙 Grabar mi voz</button>
 <label>o sube un audio de voz</label>
@@ -115,6 +116,7 @@ Pregunta por nuestras promociones</textarea>
 </div>
 <div class="edbar"><span>Tolerancia</span><input type="range" id="tol" min="5" max="120" value="40"><span>Pincel</span><input type="range" id="brush" min="8" max="120" value="40"></div>
 <div class="edbar" style="justify-content:center">Varita: toca el fondo. Borrar y Restaurar: pasa el dedo.</div>
+<div class="edbar"><button type="button" id="auto">✨ Recorte automático</button></div>
 <div class="edwrap"><canvas id="ec"></canvas></div>
 <div class="edbar">
 <button type="button" id="edok">Listo</button>
@@ -256,56 +258,94 @@ function armaVoz(ac,buf,dest,ef){
   g.connect(dest);
   return s;
 }
-function run(r){
+function run(r,fin){
   cancelAnimationFrame(raf);
   const T=total(),t0=performance.now();
   const f=now=>{
     const t=(now-t0)/1000;
     drawAt(Math.min(t,T-.001));
     if(t<T)raf=requestAnimationFrame(f);
-    else{if(r&&r.state!=='inactive')r.stop();busy(false)}
+    else{if(r&&r.state!=='inactive')r.stop();if(fin)fin();busy(false)}
   };
   raf=requestAnimationFrame(f);
 }
 function busy(b){$('play').disabled=b;$('rec').disabled=b}
 function msg(s){$('msg').textContent=s}
-$('play').onclick=()=>{busy(true);msg('');run(null)};
+async function montaAudio(ac,dest){
+  const T=total(),gain=ac.createGain(),nivel=voz?.35:.8;
+  let src=null,vs=null;
+  gain.gain.value=nivel;
+  gain.connect(dest);
+  if(dest!==ac.destination){
+    const z=ac.createGain();z.gain.value=0;
+    gain.connect(z);z.connect(ac.destination);
+  }
+  if(musica){
+    const buf=await ac.decodeAudioData(await musica.arrayBuffer());
+    src=ac.createBufferSource();src.buffer=buf;src.loop=true;src.connect(gain);
+  }
+  if(voz){
+    const vb=await ac.decodeAudioData(await voz.arrayBuffer());
+    vs=armaVoz(ac,vb,dest,$('efecto').value);
+  }
+  return{
+    start(){
+      const t=ac.currentTime;
+      gain.gain.setValueAtTime(nivel,t+Math.max(0,T-1.2));
+      gain.gain.linearRampToValueAtTime(0,t+T);
+      if(src)src.start(t);
+      if(vs)vs.start(t);
+    },
+    stop(){[src,vs].forEach(s=>{if(s){try{s.stop()}catch(_){}}})}
+  };
+}
+$('play').onclick=async()=>{
+  busy(true);msg('');
+  const AC=window.AudioContext||window.webkitAudioContext;
+  let au=null,ac=null;
+  if((musica||voz)&&AC){
+    ac=new AC();ac.resume();
+    try{au=await montaAudio(ac,ac.destination)}
+    catch(e){msg('No pude leer el audio: '+(e&&e.message?e.message:'formato no compatible'))}
+  }
+  if(au)au.start();
+  run(null,()=>{if(au)au.stop();if(ac)ac.close()});
+};
 $('rec').onclick=async()=>{
   const AC=window.AudioContext||window.webkitAudioContext;
-  voiceSrc=null;
-  audioFalla=false;
+  audioFalla='';
   const ac=(musica||voz)&&AC?new AC():null;
   if(ac)ac.resume();
   await fuentesCargadas();
   const types=['video/mp4','video/mp4;codecs=avc1','video/webm;codecs=vp9','video/webm'];
   const mt=window.MediaRecorder&&types.find(m=>MediaRecorder.isTypeSupported(m));
   if(!mt||!cv.captureStream){msg('Este navegador no puede grabar video.');return}
-  const st=cv.captureStream(30);let src=null;
+  let tracks=[...cv.captureStream(30).getVideoTracks()],au=null;
   if(ac){
     try{
-      const buf=musica?await ac.decodeAudioData(await musica.arrayBuffer()):null;
-      const dest=ac.createMediaStreamDestination(),gain=ac.createGain(),T=total();
-      if(buf){src=ac.createBufferSource();src.buffer=buf;src.loop=true;}
-      gain.gain.setValueAtTime(voz?.35:.8,ac.currentTime+Math.max(0,T-1.2));
-      gain.gain.linearRampToValueAtTime(0,ac.currentTime+T);
-      if(src)src.connect(gain);gain.connect(dest);
-      if(voz){const vb=await ac.decodeAudioData(await voz.arrayBuffer());voiceSrc=armaVoz(ac,vb,dest,$('efecto').value)}
-      dest.stream.getAudioTracks().forEach(t=>st.addTrack(t));
-    }catch(e){audioFalla=true;src=null;voiceSrc=null}
+      await ac.resume();
+      const dest=ac.createMediaStreamDestination();
+      au=await montaAudio(ac,dest);
+      tracks=tracks.concat(dest.stream.getAudioTracks());
+    }catch(e){audioFalla=e&&e.message?e.message:'formato no compatible';au=null}
   }
-  const chunks=[],r=new MediaRecorder(st,{mimeType:mt,videoBitsPerSecond:4e6});
+  const st=new MediaStream(tracks);
+  const chunks=[],r=new MediaRecorder(st,{mimeType:mt,videoBitsPerSecond:4e6,audioBitsPerSecond:128000});
   r.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
   r.onstop=()=>{
-    if(src){try{src.stop()}catch(_){}}
-    if(voiceSrc){try{voiceSrc.stop()}catch(_){}}
+    if(au)au.stop();
     if(ac)ac.close();
     blob=new Blob(chunks,{type:mt.split(';')[0]});
     $('vid').src=URL.createObjectURL(blob);
     $('res').hidden=false;
     $('res').scrollIntoView({behavior:'smooth'});
-    msg(audioFalla?'Video listo, pero sin audio: no pude leer el archivo (usa mp3, m4a o wav).':'Video listo');
+    const nA=st.getAudioTracks().length;
+    msg(audioFalla?'Video listo, pero sin audio: '+audioFalla:(nA?'Video listo con audio. Si no se oye, sube el volumen del iPhone.':'Video listo'));
   };
-  busy(true);msg('Grabando…');r.start();if(src)src.start();if(voiceSrc)voiceSrc.start();run(r);
+  busy(true);msg('Grabando…');
+  r.start();
+  if(au)au.start();
+  run(r);
 };
 $('share').onclick=async()=>{
   if(!blob)return;
@@ -428,6 +468,157 @@ cvE.addEventListener('pointerdown',e=>{
 });
 cvE.addEventListener('pointermove',e=>{if(down){const[x,y]=coord(e);pincel(x,y)}});
 ['pointerup','pointercancel'].forEach(t=>cvE.addEventListener(t,()=>{down=false;last=null}));
+function modelo(px,lab,val,N){
+  const idx=[];
+  for(let i=0;i<N;i++)if(lab[i]===val)idx.push(i);
+  const base=[{m:[128,128,128],v:[4000,4000,4000],w:1}];
+  if(idx.length<10)return base;
+  const K=4,step=Math.max(1,(idx.length/2000)|0),S=[];
+  for(let j=0;j<idx.length;j+=step){const i=idx[j];S.push([px[i*4],px[i*4+1],px[i*4+2]])}
+  S.sort((a,b)=>(a[0]+a[1]+a[2])-(b[0]+b[1]+b[2]));
+  let C=[];
+  for(let k=0;k<K;k++)C.push(S[Math.floor((k+.5)*S.length/K)].slice());
+  const as=new Array(S.length).fill(0);
+  for(let t=0;t<6;t++){
+    for(let j=0;j<S.length;j++){
+      let bd=1e9,bk=0;
+      for(let k=0;k<K;k++){
+        const d=(S[j][0]-C[k][0])**2+(S[j][1]-C[k][1])**2+(S[j][2]-C[k][2])**2;
+        if(d<bd){bd=d;bk=k}
+      }
+      as[j]=bk;
+    }
+    const sum=C.map(()=>[0,0,0,0]);
+    for(let j=0;j<S.length;j++){const s=sum[as[j]];s[0]+=S[j][0];s[1]+=S[j][1];s[2]+=S[j][2];s[3]++}
+    C=C.map((c,k)=>sum[k][3]?[sum[k][0]/sum[k][3],sum[k][1]/sum[k][3],sum[k][2]/sum[k][3]]:c);
+  }
+  const out=[];
+  for(let k=0;k<K;k++){
+    const mem=S.filter((_,j)=>as[j]===k);
+    if(mem.length<3)continue;
+    const v=[0,0,0];
+    mem.forEach(p=>{for(let c=0;c<3;c++)v[c]+=(p[c]-C[k][c])**2});
+    out.push({m:C[k],v:v.map(x=>Math.max(150,x/mem.length)),w:mem.length/S.length});
+  }
+  return out.length?out:base;
+}
+function costo(M,r,g,b){
+  let p=0;
+  for(const c of M){
+    const d=(r-c.m[0])**2/c.v[0]+(g-c.m[1])**2/c.v[1]+(b-c.m[2])**2/c.v[2];
+    p+=c.w*Math.exp(-.5*d)/Math.sqrt(c.v[0]*c.v[1]*c.v[2]);
+  }
+  return -Math.log(p+1e-12);
+}
+function suaviza(lab,fix,w,h,n){
+  for(let t=0;t<n;t++){
+    const cp=lab.slice();
+    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+      const i=y*w+x;
+      if(fix[i])continue;
+      let s=0;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)s+=cp[i+dy*w+dx];
+      lab[i]=s>=5?1:0;
+    }
+  }
+}
+function vecinos(p,w,h){
+  const x=p%w,y=(p/w)|0,o=[];
+  if(x>0)o.push(p-1);
+  if(x<w-1)o.push(p+1);
+  if(y>0)o.push(p-w);
+  if(y<h-1)o.push(p+w);
+  return o;
+}
+function limpia(lab,w,h){
+  const N=w*h,comp=new Int32Array(N);
+  let best=0,bestN=0,id=0;
+  for(let s=0;s<N;s++){
+    if(!lab[s]||comp[s])continue;
+    id++;
+    const st=[s];comp[s]=id;
+    let n=0;
+    while(st.length){
+      const p=st.pop();n++;
+      for(const q of vecinos(p,w,h))if(lab[q]&&!comp[q]){comp[q]=id;st.push(q)}
+    }
+    if(n>bestN){bestN=n;best=id}
+  }
+  for(let i=0;i<N;i++)lab[i]=comp[i]===best?1:0;
+  const fuera=new Uint8Array(N),st=[];
+  for(let i=0;i<N;i++){
+    const x=i%w,y=(i/w)|0;
+    if((x===0||y===0||x===w-1||y===h-1)&&!lab[i]){fuera[i]=1;st.push(i)}
+  }
+  while(st.length){
+    const p=st.pop();
+    for(const q of vecinos(p,w,h))if(!lab[q]&&!fuera[q]){fuera[q]=1;st.push(q)}
+  }
+  for(let i=0;i<N;i++)if(!lab[i]&&!fuera[i])lab[i]=1;
+}
+function autoRecorte(){
+  const o=E.orig,sc=Math.min(1,240/Math.max(o.width,o.height));
+  const w=Math.max(8,Math.round(o.width*sc)),h=Math.max(8,Math.round(o.height*sc));
+  const sm=document.createElement('canvas');sm.width=w;sm.height=h;
+  const sx=sm.getContext('2d');sx.drawImage(o,0,0,w,h);
+  const px=sx.getImageData(0,0,w,h).data,N=w*h;
+  const lab=new Uint8Array(N),fix=new Uint8Array(N);
+  const mx=Math.round(w*.08),my=Math.round(h*.08);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const i=y*w+x,nx=(x/w-.5)/.5,ny=(y/h-.5)/.5,q=nx*nx+ny*ny;
+    if(x<mx||y<my||x>=w-mx||y>=h-my){fix[i]=1;lab[i]=0}
+    else if(q<.18){fix[i]=1;lab[i]=1}
+    else lab[i]=q<.7?1:0;
+  }
+  for(let it=0;it<5;it++){
+    const fg=modelo(px,lab,1,N),bg=modelo(px,lab,0,N);
+    for(let i=0;i<N;i++){
+      if(fix[i])continue;
+      const r=px[i*4],g=px[i*4+1],b=px[i*4+2];
+      const x=(i%w)/w-.5,y=((i/w)|0)/h-.5,d=(x*x+y*y)*4;
+      lab[i]=(costo(fg,r,g,b)+d*2.5<costo(bg,r,g,b))?1:0;
+    }
+    suaviza(lab,fix,w,h,2);
+  }
+  limpia(lab,w,h);
+  const mk=document.createElement('canvas');mk.width=w;mk.height=h;
+  const mc=mk.getContext('2d'),mi=mc.createImageData(w,h);
+  for(let i=0;i<N;i++){const v=lab[i]?255:0;mi.data[i*4]=v;mi.data[i*4+1]=v;mi.data[i*4+2]=v;mi.data[i*4+3]=255}
+  mc.putImageData(mi,0,0);
+  const big=document.createElement('canvas');big.width=o.width;big.height=o.height;
+  const bc=big.getContext('2d');
+  bc.imageSmoothingEnabled=true;bc.imageSmoothingQuality='high';
+  bc.drawImage(mk,0,0,o.width,o.height);
+  const bd=bc.getImageData(0,0,o.width,o.height).data;
+  const wc=E.work.getContext('2d');
+  wc.clearRect(0,0,o.width,o.height);wc.drawImage(o,0,0);
+  const wi=wc.getImageData(0,0,o.width,o.height),d=wi.data;
+  for(let i=0;i<o.width*o.height;i++)d[i*4+3]=Math.max(0,Math.min(255,(bd[i*4]-110)*3.2));
+  wc.putImageData(wi,0,0);
+  pintaEd();
+}
+$('auto').onclick=()=>{
+  const b=$('auto');
+  b.disabled=true;b.textContent='Procesando…';
+  setTimeout(()=>{
+    try{guarda();autoRecorte()}catch(e){}
+    b.disabled=false;b.textContent='✨ Recorte automático';
+  },40);
+};
+$('pngcut').addEventListener('change',async e=>{
+  const f=e.target.files[0];
+  if(!f||!imgs.length){msg('Primero sube las fotos.');return}
+  const k=+$('fsel').value||0,im=imgs[k],pi=new Image();
+  pi.src=URL.createObjectURL(f);
+  try{
+    await pi.decode();
+    const s=Math.min(1,1080/Math.max(im.width,im.height)),c=document.createElement('canvas');
+    c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
+    c.getContext('2d').drawImage(pi,0,0,c.width,c.height);
+    cuts[k]=c;actualizaSel();$('fsel').value=k;$('pos').value='recorte';
+    drawAt(1.6);msg('Recorte cargado para la foto '+(k+1)+'.');
+  }catch(_){msg('No pude abrir ese PNG.')}
+});
 $('undo').onclick=()=>{
   const h=E.hist.pop();
   if(h){E.work.getContext('2d').putImageData(h,0,0);pintaEd()}
