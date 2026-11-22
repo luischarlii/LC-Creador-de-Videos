@@ -25,6 +25,13 @@ button.sec{background:var(--bg);color:var(--fg);border:1px solid var(--bd)}
 button:disabled{opacity:.5}
 canvas,video{display:block;width:100%;max-width:300px;margin:0 auto;border-radius:12px;background:#000;aspect-ratio:9/16}
 #msg{text-align:center;color:var(--mut);font-size:14px;min-height:20px;margin-top:8px}
+#ed{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column;gap:8px;padding:calc(10px + env(safe-area-inset-top,0px)) 10px calc(10px + env(safe-area-inset-bottom,0px))}
+.edbar{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--mut)}
+.edbar button{margin:0;padding:10px 4px;font-size:14px}
+.edbar input[type=range]{flex:1;min-width:0}
+.edwrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:repeating-conic-gradient(#bbb 0 25%,#eee 0 50%) 0 0/20px 20px;border-radius:10px;overflow:hidden}
+#ec{width:auto;height:auto;max-width:100%;max-height:100%;aspect-ratio:auto;border-radius:0;background:none;margin:0;touch-action:none}
+button.on{background:var(--ac);color:#fff}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -77,30 +84,48 @@ Pregunta por nuestras promociones</textarea>
 <label>Letra de las frases y el contacto</label>
 <select id="f2"></select>
 <label>Posición de las fotos</label>
-<select id="pos"><option value="fondo">Al fondo (el texto va encima)</option><option value="frente">Al frente (la foto va encima del texto)</option></select>
+<select id="pos"><option value="fondo">Al fondo (el texto va encima)</option><option value="frente">Al frente (la foto va encima del texto)</option><option value="recorte">Recorte (el texto queda detrás de la persona u objeto)</option></select>
 <label>Cuánto tapa la foto al texto (solo al frente)</label>
 <input type="range" id="ov" min="0" max="1" step="0.05" value="0.35" style="width:100%">
 <label>Fotos (opcional, hasta 6)</label>
 <input type="file" id="fotos" accept="image/*" multiple>
 <div id="nf" style="font-size:13px;color:var(--mut);margin-top:4px"></div>
+<label>Quitar el fondo de una foto (para que el texto quede detrás)</label>
+<div class="row"><div style="flex:2"><select id="fsel"></select></div><div><button type="button" id="fcut" class="sec" style="margin-top:0">✂ Quitar fondo</button></div></div>
 <label>Voz (opcional)</label>
 <button type="button" id="mic" class="sec">🎙 Grabar mi voz</button>
 <label>o sube un audio de voz</label>
-<input type="file" id="vozf" accept="audio/*">
+<input type="file" id="vozf">
 <div id="nv" style="font-size:13px;color:var(--mut);margin-top:4px"></div>
 <label>Efecto de voz</label>
 <select id="efecto"><option value="normal">Normal</option><option value="ardilla">Ardilla (aguda)</option><option value="gigante">Gigante (grave)</option><option value="robot">Robot</option><option value="eco">Eco de cueva</option><option value="telefono">Teléfono viejo</option></select>
 <button type="button" id="probar" class="sec">🔊 Probar efecto</button>
 <label>Música o audio (opcional, desde Archivos)</label>
-<input type="file" id="musica" accept="audio/*">
+<input type="file" id="musica">
 <div id="nm" style="font-size:13px;color:var(--mut);margin-top:4px"></div>
 </form>
 </main>
+<div id="ed" hidden>
+<div class="edbar">
+<button type="button" data-m="varita" class="sec on">Varita</button>
+<button type="button" data-m="borrar" class="sec">Borrar</button>
+<button type="button" data-m="restaurar" class="sec">Restaurar</button>
+<button type="button" id="undo" class="sec">Deshacer</button>
+</div>
+<div class="edbar"><span>Tolerancia</span><input type="range" id="tol" min="5" max="120" value="40"><span>Pincel</span><input type="range" id="brush" min="8" max="120" value="40"></div>
+<div class="edbar" style="justify-content:center">Varita: toca el fondo. Borrar y Restaurar: pasa el dedo.</div>
+<div class="edwrap"><canvas id="ec"></canvas></div>
+<div class="edbar">
+<button type="button" id="edok">Listo</button>
+<button type="button" id="edno" class="sec">Cancelar</button>
+<button type="button" id="edclr" class="sec">Quitar recorte</button>
+</div>
+</div>
 <script>
 const $=id=>document.getElementById(id);
 const cv=$('cv'),ctx=cv.getContext('2d'),W=720,H=1280;
 cv.width=W;cv.height=H;
-let imgs=[],raf=null,blob=null,musica=null,voz=null,mrec=null,voiceSrc=null,front=false,curK='';
+let imgs=[],raf=null,blob=null,musica=null,voz=null,mrec=null,voiceSrc=null,front=false,curK='',recorte=false,cuts=[],audioFalla=false;
 const ease=x=>1-Math.pow(1-x,3);
 const clamp=x=>Math.max(0,Math.min(1,x));
 function data(){
@@ -156,7 +181,7 @@ function bg(i,p,d,noImg){
     }
   }
 }
-function drawAt(t){front=$('pos').value==='frente'&&imgs.length>0;drawCore(t)}
+function drawAt(t){front=$('pos').value==='frente'&&imgs.length>0;recorte=$('pos').value==='recorte'&&imgs.length>0;drawCore(t)}
 function drawCore(t){
   const d=data(),sc=scenes();
   let acc=0,s=sc[sc.length-1],lt=s.t;
@@ -165,11 +190,11 @@ function drawCore(t){
   if(s.k==='intro'){
     bg(0,p,d);
     txt(d.name||' ',H*.42,96,d.ct,a,'800',d.f1);
-    txt(d.slogan,H*.58,44,d.cf,ease(clamp((lt-.5)/.6))*clamp((s.t-lt)/.4),'600',d.f2);card(0,p,lt);
+    txt(d.slogan,H*.58,44,d.cf,ease(clamp((lt-.5)/.6))*clamp((s.t-lt)/.4),'600',d.f2);card(0,p,lt);recorteTop(0,p);
   }else if(s.k==='line'){
     bg(s.i+1,p,d);
     ctx.fillStyle=d.co;ctx.fillRect(W/2-60,H*.5-190,120,8);
-    txt(s.text,H*.5,64,d.cl[s.i],a,'800',d.f2);card(s.i+1,p,lt);
+    txt(s.text,H*.5,64,d.cl[s.i],a,'800',d.f2);card(s.i+1,p,lt);recorteTop(s.i+1,p);
   }else if(s.k==='offer'){
     bg(0,p,d,true);
     txt('¡OFERTA!',H*.34,60,d.co,a,'700',d.f1);
@@ -179,6 +204,15 @@ function drawCore(t){
     txt(d.name||' ',H*.4,84,d.ct,a,'800',d.f1);
     txt(d.contact,H*.56,50,d.cc,ease(clamp((lt-.4)/.6)),'600',d.f2);card(1,p,lt);
   }
+}
+function foto(im,p){
+  const r=Math.max(W/im.width,H/im.height)*(1+.1*p),w=im.width*r,h=im.height*r;
+  ctx.drawImage(im,(W-w)/2,(H-h)/2,w,h);
+}
+function recorteTop(i,p){
+  if(!recorte||!imgs.length)return;
+  const c=cuts[i%imgs.length];
+  if(c)foto(c,p);
 }
 function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath()}
 function card(i,p,lt){
@@ -238,6 +272,7 @@ $('play').onclick=()=>{busy(true);msg('');run(null)};
 $('rec').onclick=async()=>{
   const AC=window.AudioContext||window.webkitAudioContext;
   voiceSrc=null;
+  audioFalla=false;
   const ac=(musica||voz)&&AC?new AC():null;
   if(ac)ac.resume();
   await fuentesCargadas();
@@ -255,7 +290,7 @@ $('rec').onclick=async()=>{
       if(src)src.connect(gain);gain.connect(dest);
       if(voz){const vb=await ac.decodeAudioData(await voz.arrayBuffer());voiceSrc=armaVoz(ac,vb,dest,$('efecto').value)}
       dest.stream.getAudioTracks().forEach(t=>st.addTrack(t));
-    }catch(e){msg('No pude leer el audio; grabo sin música.');src=null}
+    }catch(e){audioFalla=true;src=null;voiceSrc=null}
   }
   const chunks=[],r=new MediaRecorder(st,{mimeType:mt,videoBitsPerSecond:4e6});
   r.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
@@ -267,7 +302,7 @@ $('rec').onclick=async()=>{
     $('vid').src=URL.createObjectURL(blob);
     $('res').hidden=false;
     $('res').scrollIntoView({behavior:'smooth'});
-    msg('Video listo');
+    msg(audioFalla?'Video listo, pero sin audio: no pude leer el archivo (usa mp3, m4a o wav).':'Video listo');
   };
   busy(true);msg('Grabando…');r.start();if(src)src.start();if(voiceSrc)voiceSrc.start();run(r);
 };
@@ -281,12 +316,13 @@ $('share').onclick=async()=>{
   }catch(e){msg('No se pudo compartir; mantén presionado el video.')}
 };
 $('fotos').addEventListener('change',async e=>{
-  imgs=[];
+  imgs=[];cuts=[];
   for(const f of [...e.target.files].slice(0,6)){
     const im=new Image();im.src=URL.createObjectURL(f);
     try{await im.decode();imgs.push(im)}catch(_){}
   }
   $('nf').textContent=imgs.length+' foto(s) cargada(s)';
+  actualizaSel();
   drawAt(3.5);
 });
 $('musica').addEventListener('change',e=>{
@@ -316,6 +352,92 @@ $('mic').onclick=async()=>{
     mrec.start();$('mic').textContent='⏹ Detener grabación';
   }catch(e){msg('No pude usar el micrófono aquí. Sube un audio de voz con el botón de abajo.')}
 };
+let E={i:0,orig:null,work:null,mode:'varita',hist:[]},down=false,last=null;
+const cvE=$('ec');
+function actualizaSel(){
+  $('fsel').innerHTML=imgs.map((_,k)=>'<option value="'+k+'">Foto '+(k+1)+(cuts[k]?' ✂':'')+'</option>').join('');
+}
+function pintaEd(){
+  const c=cvE.getContext('2d');
+  c.clearRect(0,0,cvE.width,cvE.height);c.drawImage(E.work,0,0);
+}
+function setMode(m){
+  E.mode=m;
+  document.querySelectorAll('#ed [data-m]').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+}
+document.querySelectorAll('#ed [data-m]').forEach(b=>{b.onclick=()=>setMode(b.dataset.m)});
+$('fcut').onclick=()=>{
+  if(!imgs.length){msg('Primero sube fotos.');return}
+  const k=+$('fsel').value||0,im=imgs[k],s=Math.min(1,1080/Math.max(im.width,im.height));
+  const o=document.createElement('canvas');
+  o.width=Math.round(im.width*s);o.height=Math.round(im.height*s);
+  o.getContext('2d').drawImage(im,0,0,o.width,o.height);
+  const w=document.createElement('canvas');
+  w.width=o.width;w.height=o.height;
+  w.getContext('2d').drawImage(cuts[k]||o,0,0);
+  E={i:k,orig:o,work:w,mode:'varita',hist:[]};
+  cvE.width=o.width;cvE.height=o.height;
+  setMode('varita');pintaEd();
+  $('ed').hidden=false;
+};
+function coord(e){
+  const r=cvE.getBoundingClientRect();
+  return[(e.clientX-r.left)*cvE.width/r.width,(e.clientY-r.top)*cvE.height/r.height];
+}
+function guarda(){
+  E.hist.push(E.work.getContext('2d').getImageData(0,0,E.work.width,E.work.height));
+  if(E.hist.length>8)E.hist.shift();
+}
+function varita(sx,sy){
+  const c=E.work.getContext('2d'),w=E.work.width,h=E.work.height;
+  if(sx<0||sy<0||sx>=w||sy>=h)return;
+  const id=c.getImageData(0,0,w,h),d=id.data,tol=+$('tol').value*3;
+  const i0=(sy*w+sx)*4,R=d[i0],G=d[i0+1],B=d[i0+2];
+  const seen=new Uint8Array(w*h),st=[sy*w+sx];
+  seen[st[0]]=1;
+  while(st.length){
+    const p=st.pop(),o=p*4;
+    const m=d[o+3]===0||Math.abs(d[o]-R)+Math.abs(d[o+1]-G)+Math.abs(d[o+2]-B)<=tol;
+    if(!m)continue;
+    d[o+3]=0;
+    const x=p%w,y=(p/w)|0;
+    if(x>0&&!seen[p-1]){seen[p-1]=1;st.push(p-1)}
+    if(x<w-1&&!seen[p+1]){seen[p+1]=1;st.push(p+1)}
+    if(y>0&&!seen[p-w]){seen[p-w]=1;st.push(p-w)}
+    if(y<h-1&&!seen[p+w]){seen[p+w]=1;st.push(p+w)}
+  }
+  c.putImageData(id,0,0);pintaEd();
+}
+function pincel(x,y){
+  const c=E.work.getContext('2d'),k=cvE.width/cvE.getBoundingClientRect().width;
+  c.save();
+  c.lineWidth=+$('brush').value*k;c.lineCap='round';c.lineJoin='round';
+  if(E.mode==='borrar'){c.globalCompositeOperation='destination-out';c.strokeStyle='#000'}
+  else c.strokeStyle=c.createPattern(E.orig,'no-repeat');
+  const a=last||[x,y];
+  c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(x,y);c.stroke();c.restore();
+  last=[x,y];pintaEd();
+}
+cvE.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  const[x,y]=coord(e);
+  guarda();last=null;
+  if(E.mode==='varita')varita(x|0,y|0);
+  else{down=true;cvE.setPointerCapture(e.pointerId);pincel(x,y)}
+});
+cvE.addEventListener('pointermove',e=>{if(down){const[x,y]=coord(e);pincel(x,y)}});
+['pointerup','pointercancel'].forEach(t=>cvE.addEventListener(t,()=>{down=false;last=null}));
+$('undo').onclick=()=>{
+  const h=E.hist.pop();
+  if(h){E.work.getContext('2d').putImageData(h,0,0);pintaEd()}
+};
+$('edok').onclick=()=>{
+  cuts[E.i]=E.work;$('ed').hidden=true;actualizaSel();$('fsel').value=E.i;
+  if($('pos').value!=='recorte')$('pos').value='recorte';
+  drawAt(1.6);msg('Recorte guardado. El texto ahora va detrás de la foto.');
+};
+$('edno').onclick=()=>{$('ed').hidden=true};
+$('edclr').onclick=()=>{cuts[E.i]=null;$('ed').hidden=true;actualizaSel();drawAt(1.6)};
 $('vozf').addEventListener('change',e=>{
   voz=e.target.files[0]||null;
   $('nv').textContent=voz?voz.name:'';
