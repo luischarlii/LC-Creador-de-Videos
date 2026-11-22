@@ -32,6 +32,11 @@ canvas,video{display:block;width:100%;max-width:300px;margin:0 auto;border-radiu
 .edwrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:repeating-conic-gradient(#bbb 0 25%,#eee 0 50%) 0 0/20px 20px;border-radius:10px;overflow:hidden}
 #ec{width:auto;height:auto;max-width:100%;max-height:100%;aspect-ratio:auto;border-radius:0;background:none;margin:0;touch-action:none}
 button.on{background:var(--ac);color:#fff}
+#thumbs{display:flex;gap:6px;overflow-x:auto;padding:4px 0}
+.th{position:relative;flex:0 0 auto;width:56px;height:56px;border:2px solid var(--bd);border-radius:8px;overflow:hidden}
+.th.on{border-color:var(--ac)}
+.th img{width:100%;height:100%;object-fit:cover;display:block}
+.th b{position:absolute;left:2px;top:2px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:0 4px;border-radius:6px}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -40,6 +45,9 @@ button.on{background:var(--ac);color:#fff}
 <h1>Creador de video publicitario</h1>
 <div class="card">
 <canvas id="cv"></canvas>
+<input type="range" id="tl" min="0" max="15" step="0.05" value="1.6" style="width:100%;margin-top:10px">
+<div id="tlt" style="text-align:center;font-size:13px;color:var(--mut)"></div>
+<div class="row"><div><button type="button" id="tprev" class="sec">◀ Escena anterior</button></div><div><button type="button" id="tnext" class="sec">Escena siguiente ▶</button></div></div>
 <button id="play" class="sec">▶ Vista previa</button>
 <button id="rec">⏺ Grabar video</button>
 <div id="msg"></div>
@@ -103,6 +111,12 @@ Pregunta por nuestras promociones</textarea>
 <div id="nf" style="font-size:13px;color:var(--mut);margin-top:4px"></div>
 <label>Quitar el fondo de una foto (para que el texto quede detrás)</label>
 <div class="row"><div style="flex:2"><select id="fsel"></select></div><div><button type="button" id="fcut" class="sec" style="margin-top:0">✂ Quitar fondo</button></div></div>
+<div id="thumbs"></div>
+<div class="row"><div><button type="button" id="fizq" class="sec">◀ Mover antes</button></div><div><button type="button" id="fder" class="sec">Mover después ▶</button></div></div>
+<div class="row"><div><button type="button" id="frepb" class="sec">🔄 Sustituir</button></div><div><button type="button" id="fdel" class="sec">🗑 Quitar</button></div></div>
+<button type="button" id="faddb" class="sec">➕ Agregar más fotos</button>
+<input type="file" id="frep" accept="image/*" hidden>
+<input type="file" id="fadd" accept="image/*" multiple hidden>
 <button type="button" id="fadj" class="sec">✋ Mover y agrandar la foto elegida</button>
 <label>¿Ya tienes la foto sin fondo (PNG)? Súbela para la foto elegida</label>
 <input type="file" id="pngcut" accept="image/png">
@@ -150,7 +164,7 @@ Pregunta por nuestras promociones</textarea>
 const $=id=>document.getElementById(id);
 const cv=$('cv'),ctx=cv.getContext('2d'),W=720,H=1280;
 cv.width=W;cv.height=H;
-let imgs=[],raf=null,blob=null,musica=null,voz=null,mrec=null,voiceSrc=null,front=false,curK='',recorte=false,cuts=[],audioFalla=false,tr=[],adj=null,tAdj=0;
+let imgs=[],raf=null,blob=null,musica=null,voz=null,mrec=null,voiceSrc=null,front=false,curK='',recorte=false,cuts=[],audioFalla=false,tr=[],adj=null,tAdj=0,posTl=1.6,prev=null;
 const ease=x=>1-Math.pow(1-x,3);
 const clamp=x=>Math.max(0,Math.min(1,x));
 function data(){
@@ -291,15 +305,16 @@ function armaVoz(ac,buf,dest,ef){
   g.connect(dest);
   return s;
 }
-function run(r,fin){
+function run(r,fin,ini){
   if(adj!==null)salirAdj();
   cancelAnimationFrame(raf);
-  const T=total(),t0=performance.now();
+  const T=total(),t0=performance.now(),o=ini||0;
   const f=now=>{
-    const t=(now-t0)/1000;
-    drawAt(Math.min(t,T-.001));
+    const t=o+(now-t0)/1000;
+    posTl=Math.min(t,T-.001);
+    drawAt(posTl);syncTl();
     if(t<T)raf=requestAnimationFrame(f);
-    else{if(r&&r.state!=='inactive')r.stop();if(fin)fin();busy(false)}
+    else{if(r&&r.state!=='inactive')r.stop();if(fin)fin()}
   };
   raf=requestAnimationFrame(f);
 }
@@ -323,29 +338,22 @@ async function montaAudio(ac,dest){
     vs=armaVoz(ac,vb,dest,$('efecto').value);
   }
   return{
-    start(){
+    start(off){
+      off=off||0;
       const t=ac.currentTime;
-      gain.gain.setValueAtTime(nivel,t+Math.max(0,T-1.2));
-      gain.gain.linearRampToValueAtTime(0,t+T);
-      if(src)src.start(t,musBuf?tIni:0);
-      if(vs)vs.start(t);
+      gain.gain.setValueAtTime(nivel,t+Math.max(0,T-1.2-off));
+      gain.gain.linearRampToValueAtTime(0,t+Math.max(.01,T-off));
+      if(src){
+        const dur=musBuf?Math.max(.5,tFin-tIni):0;
+        src.start(t,musBuf?tIni+(off%dur):off);
+      }
+      if(vs)vs.start(t,Math.min(off,Math.max(0,vs.buffer.duration-.05)));
     },
     stop(){[src,vs].forEach(s=>{if(s){try{s.stop()}catch(_){}}})}
   };
 }
-$('play').onclick=async()=>{
-  busy(true);msg('');
-  const AC=window.AudioContext||window.webkitAudioContext;
-  let au=null,ac=null;
-  if((musica||voz)&&AC){
-    ac=new AC();ac.resume();
-    try{au=await montaAudio(ac,ac.destination)}
-    catch(e){msg('No pude leer el audio: '+(e&&e.message?e.message:'formato no compatible'))}
-  }
-  if(au)au.start();
-  run(null,()=>{if(au)au.stop();if(ac)ac.close()});
-};
 $('rec').onclick=async()=>{
+  if(prev)paraPreview();
   const AC=window.AudioContext||window.webkitAudioContext;
   audioFalla='';
   const ac=(musica||voz)&&AC?new AC():null;
@@ -379,7 +387,7 @@ $('rec').onclick=async()=>{
   busy(true);msg('Grabando…');
   r.start();
   if(au)au.start();
-  run(r);
+  run(r,()=>busy(false));
 };
 $('share').onclick=async()=>{
   if(!blob)return;
@@ -402,7 +410,7 @@ $('fotos').addEventListener('change',async e=>{
   }
   $('nf').textContent=imgs.length+' foto(s) cargada(s)';
   actualizaSel();
-  drawAt(3.5);
+  refresca();
 });
 $('musica').addEventListener('change',e=>{
   musica=e.target.files[0]||null;
@@ -413,7 +421,7 @@ const FUENTES=[['system-ui','Normal (sistema)'],['Impact','Impact'],['Arial Blac
   $(id).innerHTML=FUENTES.map(x=>'<option value="'+x[0]+'">'+x[1]+'</option>').join('');
 });
 const fuentesCargadas=()=>Promise.all([$('f1').value,$('f2').value].map(f=>f==='system-ui'?0:document.fonts.load('40px "'+f+'"').catch(()=>0)));
-$('f').addEventListener('input',()=>{drawAt(1.6);fuentesCargadas().then(()=>drawAt(1.6))});
+$('f').addEventListener('input',()=>{refresca();fuentesCargadas().then(()=>refresca())});
 $('mic').onclick=async()=>{
   if(mrec&&mrec.state==='recording'){mrec.stop();return}
   try{
@@ -433,9 +441,6 @@ $('mic').onclick=async()=>{
 };
 let E={i:0,orig:null,work:null,mode:'varita',hist:[]},down=false,last=null;
 const cvE=$('ec');
-function actualizaSel(){
-  $('fsel').innerHTML=imgs.map((_,k)=>'<option value="'+k+'">Foto '+(k+1)+(cuts[k]?' ✂':'')+'</option>').join('');
-}
 function pintaEd(){
   const c=cvE.getContext('2d');
   c.clearRect(0,0,cvE.width,cvE.height);c.drawImage(E.work,0,0);
@@ -653,8 +658,8 @@ $('pngcut').addEventListener('change',async e=>{
     const s=Math.min(1,1080/Math.max(im.width,im.height)),c=document.createElement('canvas');
     c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
     c.getContext('2d').drawImage(pi,0,0,c.width,c.height);
-    cuts[k]=c;actualizaSel();$('fsel').value=k;$('pos').value='recorte';
-    drawAt(1.6);msg('Recorte cargado para la foto '+(k+1)+'.');
+    cuts[k]=c;actualizaSel(k);$('pos').value='recorte';
+    refresca();msg('Recorte cargado para la foto '+(k+1)+'.');
   }catch(_){msg('No pude abrir ese PNG.')}
 });
 let musBuf=null,tIni=0,tFin=0,peaks=null,tpAc=null,tpSrc=null;
@@ -845,22 +850,134 @@ $('pload').addEventListener('change',async e=>{
     if(musBuf&&o.ti!=null){$('ti').value=o.ti;$('tf').value=o.tf;ajusta('ti')}
     $('nf').textContent=imgs.length+' foto(s) cargada(s)';
     actualizaSel();
-    drawAt(1.6);
-    fuentesCargadas().then(()=>drawAt(1.6));
+    refresca();
+    fuentesCargadas().then(()=>refresca());
     $('pmsg').textContent='Proyecto abierto.';
   }catch(err){$('pmsg').textContent='No pude abrir ese archivo de proyecto.'}
 });
+function syncTl(){
+  const T=total(),sl=$('tl');
+  if(posTl>T-.001)posTl=T-.001;
+  sl.max=T;sl.value=posTl;
+  const e=escenaEn(posTl),N={intro:'Título',offer:'Oferta',foto:'Foto',cta:'Contacto'};
+  const nombre=e.s.k==='line'?'Frase '+(e.s.i+1):N[e.s.k];
+  $('tlt').textContent=posTl.toFixed(1)+' s / '+T.toFixed(1)+' s · '+nombre;
+}
+function refresca(){drawAt(posTl);syncTl()}
+function escenaEn(t){
+  const sc=scenes();let acc=0;
+  for(let n=0;n<sc.length;n++){
+    if(t<acc+sc[n].t||n===sc.length-1)return{n,ini:acc,s:sc[n]};
+    acc+=sc[n].t;
+  }
+}
+function paraPreview(){
+  cancelAnimationFrame(raf);
+  if(prev){
+    if(prev.au)prev.au.stop();
+    if(prev.ac)prev.ac.close();
+    prev=null;
+  }
+  $('play').textContent='▶ Vista previa';
+  $('rec').disabled=false;
+}
+function saltaEscena(d){
+  if(prev)paraPreview();
+  const sc=scenes(),e=escenaEn(posTl),n=Math.max(0,Math.min(sc.length-1,e.n+d));
+  let acc=0;
+  for(let i=0;i<n;i++)acc+=sc[i].t;
+  posTl=acc+Math.min(1.4,sc[n].t-.3);
+  refresca();
+}
+$('tl').oninput=()=>{if(prev)paraPreview();posTl=+$('tl').value;refresca()};
+$('tprev').onclick=()=>saltaEscena(-1);
+$('tnext').onclick=()=>saltaEscena(1);
+$('play').onclick=async()=>{
+  if(prev){paraPreview();return}
+  const T=total(),ini=posTl>=T-.05?0:posTl,mine={ac:null,au:null};
+  prev=mine;
+  $('play').textContent='⏸ Pausa';$('rec').disabled=true;msg('');
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if((musica||voz)&&AC){
+    const ac=new AC();ac.resume();mine.ac=ac;
+    try{mine.au=await montaAudio(ac,ac.destination)}
+    catch(e){msg('No pude leer el audio: '+(e&&e.message?e.message:'formato no compatible'))}
+    if(prev!==mine)return;
+  }
+  if(mine.au)mine.au.start(ini);
+  run(null,()=>{if(prev===mine)paraPreview()},ini);
+};
+
+const miniaturas=new WeakMap();
+function actualizaSel(sel){
+  const v=sel!=null?sel:(+$('fsel').value||0);
+  $('fsel').innerHTML=imgs.map((_,k)=>'<option value="'+k+'">Foto '+(k+1)+(cuts[k]?' ✂':'')+'</option>').join('');
+  const cur=Math.min(v,Math.max(0,imgs.length-1));
+  $('fsel').value=cur;
+  $('nf').textContent=imgs.length+' foto(s) cargada(s)';
+  const th=$('thumbs');
+  th.innerHTML='';
+  imgs.forEach((im,k)=>{
+    if(!miniaturas.has(im))miniaturas.set(im,aURL(im,'image/jpeg',96));
+    const d=document.createElement('div');
+    d.className='th'+(k===cur?' on':'');
+    d.innerHTML='<img src="'+miniaturas.get(im)+'" alt=""><b>'+(k+1)+(cuts[k]?' ✂':'')+'</b>';
+    d.onclick=()=>actualizaSel(k);
+    th.appendChild(d);
+  });
+}
+const cargaImg=async f=>{
+  const im=new Image();im.src=URL.createObjectURL(f);
+  try{await im.decode();return im}catch(_){return null}
+};
+const selF=()=>+$('fsel').value||0;
+function mover(d){
+  const k=selF(),j=k+d;
+  if(!imgs.length||j<0||j>=imgs.length)return;
+  [imgs,cuts,tr].forEach(a=>{const x=a[k];a[k]=a[j];a[j]=x});
+  actualizaSel(j);refresca();
+}
+$('fizq').onclick=()=>mover(-1);
+$('fder').onclick=()=>mover(1);
+$('frepb').onclick=()=>{if(!imgs.length){msg('Primero sube fotos.');return}$('frep').click()};
+$('frep').addEventListener('change',async e=>{
+  const f=e.target.files[0];
+  e.target.value='';
+  if(!f)return;
+  const im=await cargaImg(f);
+  if(!im){msg('No pude abrir esa foto.');return}
+  const k=selF();
+  imgs[k]=im;cuts[k]=null;tr[k]=null;
+  actualizaSel(k);refresca();msg('Foto '+(k+1)+' sustituida.');
+});
+$('faddb').onclick=()=>$('fadd').click();
+$('fadd').addEventListener('change',async e=>{
+  const fs=[...e.target.files];
+  e.target.value='';
+  for(const f of fs){
+    if(imgs.length>=12){msg('Máximo 12 fotos.');break}
+    const im=await cargaImg(f);
+    if(im)imgs.push(im);
+  }
+  actualizaSel(imgs.length-1);refresca();
+});
+$('fdel').onclick=()=>{
+  if(!imgs.length)return;
+  const k=selF();
+  [imgs,cuts,tr].forEach(a=>a.splice(k,1));
+  actualizaSel(Math.max(0,k-1));refresca();
+};
 $('undo').onclick=()=>{
   const h=E.hist.pop();
   if(h){E.work.getContext('2d').putImageData(h,0,0);pintaEd()}
 };
 $('edok').onclick=()=>{
-  cuts[E.i]=E.work;$('ed').hidden=true;actualizaSel();$('fsel').value=E.i;
+  cuts[E.i]=E.work;$('ed').hidden=true;actualizaSel(E.i);
   if($('pos').value!=='recorte')$('pos').value='recorte';
-  drawAt(1.6);msg('Recorte guardado. El texto ahora va detrás de la foto.');
+  refresca();msg('Recorte guardado. El texto ahora va detrás de la foto.');
 };
 $('edno').onclick=()=>{$('ed').hidden=true};
-$('edclr').onclick=()=>{cuts[E.i]=null;$('ed').hidden=true;actualizaSel();drawAt(1.6)};
+$('edclr').onclick=()=>{cuts[E.i]=null;$('ed').hidden=true;actualizaSel();refresca()};
 $('vozf').addEventListener('change',e=>{
   voz=e.target.files[0]||null;
   $('nv').textContent=voz?voz.name:'';
@@ -874,8 +991,8 @@ $('probar').onclick=async()=>{
     armaVoz(ac2,b,ac2.destination,$('efecto').value).start();
   }catch(e){msg('No pude reproducir esa voz.')}
 };
-fuentesCargadas().then(()=>drawAt(1.6));
-drawAt(1.6);
+fuentesCargadas().then(()=>refresca());
+refresca();
 </script>
 </body>
 </html>
