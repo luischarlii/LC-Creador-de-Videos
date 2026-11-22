@@ -87,7 +87,7 @@ Pregunta por nuestras promociones</textarea>
 <select id="pos"><option value="fondo">Al fondo (el texto va encima)</option><option value="frente">Al frente (la foto va encima del texto)</option><option value="recorte">Recorte (el texto queda detrás de la persona u objeto)</option></select>
 <label>Cuánto tapa la foto al texto (solo al frente)</label>
 <input type="range" id="ov" min="0" max="1" step="0.05" value="0.35" style="width:100%">
-<label>Fotos (opcional, hasta 6)</label>
+<label>Fotos (opcional, hasta 12)</label>
 <input type="file" id="fotos" accept="image/*" multiple>
 <div id="nf" style="font-size:13px;color:var(--mut);margin-top:4px"></div>
 <label>Quitar el fondo de una foto (para que el texto quede detrás)</label>
@@ -152,7 +152,10 @@ function scenes(){
   const d=data(),s=[{k:'intro',t:2.6}];
   d.lines.forEach((l,i)=>s.push({k:'line',t:2.6,text:l,i}));
   if(d.offer)s.push({k:'offer',t:2.8});
+  const extra=Math.max(0,imgs.length-(s.length+1));
+  for(let k=0;k<extra;k++)s.push({k:'foto',t:2.2});
   s.push({k:'cta',t:3.2});
+  s.forEach((x,n)=>{x.im=n});
   return s;
 }
 const total=()=>scenes().reduce((a,s)=>a+s.t,0);
@@ -181,7 +184,7 @@ function bg(i,p,d,noImg){
     ctx.drawImage(im,(W-w)/2,(H-h)/2,w,h);
     const g=ctx.createLinearGradient(0,0,0,H);
     g.addColorStop(0,'rgba(0,0,0,.35)');g.addColorStop(1,'rgba(0,0,0,.75)');
-    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    if(curK!=='foto'){ctx.fillStyle=g;ctx.fillRect(0,0,W,H)}
   }else{
     const g=ctx.createLinearGradient(0,0,W,H);
     g.addColorStop(0,d.c1);g.addColorStop(1,d.c2);
@@ -200,22 +203,26 @@ function drawCore(t){
   let acc=0,s=sc[sc.length-1],lt=s.t;
   for(const x of sc){if(t<acc+x.t){s=x;lt=t-acc;break}acc+=x.t}
   curK=s.k;const p=clamp(lt/s.t),a=ease(clamp(lt/.6))*clamp((s.t-lt)/.4+ (s.k==='cta'?1:0));
+  const full=()=>{const sv=front;front=false;bg(s.im,p,d);front=sv};
   if(s.k==='intro'){
-    bg(0,p,d);
+    bg(s.im,p,d);
     txt(d.name||' ',H*.42,96,d.ct,a,'800',d.f1);
-    txt(d.slogan,H*.58,44,d.cf,ease(clamp((lt-.5)/.6))*clamp((s.t-lt)/.4),'600',d.f2);card(0,p,lt);recorteTop(0,p);
+    txt(d.slogan,H*.58,44,d.cf,ease(clamp((lt-.5)/.6))*clamp((s.t-lt)/.4),'600',d.f2);card(s.im,p,lt);recorteTop(s.im,p);
   }else if(s.k==='line'){
-    bg(s.i+1,p,d);
+    bg(s.im,p,d);
     ctx.fillStyle=d.co;ctx.fillRect(W/2-60,H*.5-190,120,8);
-    txt(s.text,H*.5,64,d.cl[s.i],a,'800',d.f2);card(s.i+1,p,lt);recorteTop(s.i+1,p);
+    txt(s.text,H*.5,64,d.cl[s.i],a,'800',d.f2);card(s.im,p,lt);recorteTop(s.im,p);
   }else if(s.k==='offer'){
-    bg(0,p,d,true);
+    full();
     txt('¡OFERTA!',H*.34,60,d.co,a,'700',d.f1);
     txt(d.offer,H*.5,110,d.co,a,'800',d.f1);
+    recorteTop(s.im,p);
+  }else if(s.k==='foto'){
+    full();recorteTop(s.im,p);
   }else{
-    bg(1,p,d,true);
+    bg(s.im,p,d);
     txt(d.name||' ',H*.4,84,d.ct,a,'800',d.f1);
-    txt(d.contact,H*.56,50,d.cc,ease(clamp((lt-.4)/.6)),'600',d.f2);card(1,p,lt);
+    txt(d.contact,H*.56,50,d.cc,ease(clamp((lt-.4)/.6)),'600',d.f2);card(s.im,p,lt);recorteTop(s.im,p);
   }
 }
 function foto(im,p){
@@ -368,7 +375,7 @@ $('share').onclick=async()=>{
 };
 $('fotos').addEventListener('change',async e=>{
   imgs=[];cuts=[];
-  for(const f of [...e.target.files].slice(0,6)){
+  for(const f of [...e.target.files].slice(0,12)){
     const im=new Image();im.src=URL.createObjectURL(f);
     try{await im.decode();imgs.push(im)}catch(_){}
   }
